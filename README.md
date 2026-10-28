@@ -174,6 +174,8 @@ GPU memory to get started: 24GB on a single GPU (for low-concurrency testing)
 Recommended GPU memory: ≥48GB on a single GPU (for long documents / higher concurrency)
 ```
 
+On a Mac with Apple silicon, see [1.2.3 Run on Apple Silicon (MLX)](#123-run-on-apple-silicon-mlx).
+
 #### 1.1 Download the Code and Models
 
 | Model | Download links | Precision | Includes a lightweight layout analysis model? |
@@ -256,6 +258,59 @@ oxr serve --config config.yaml \
 ```
 
 Once all three services are running, use the demo and parsing API in the same way as with Docker. See Sections 1.3 and 1.4.
+
+##### 1.2.3 Run on Apple Silicon (MLX)
+
+```Plain Text
+Operating system: macOS on Apple silicon (M1 or later)
+Memory: 16GB works; the OXR model service needs about 3.6GB at its peak
+Python: 3.12
+```
+
+The same three services, with the OXR model running in [MLX](https://github.com/ml-explore/mlx) instead of vLLM and the Layout Analysis model on the CPU. The document parsing API is unchanged. Download the models as in 1.1, then start:
+
+**OXR Model Service on MLX (Port 8080)**
+
+`services/oxr_mlx` reads the same model folder: the language model runs on mlx-lm's Qwen3, the vision encoder, visual head and visual embedding table are ported in `services/oxr_mlx/model.py`. No code from the model folder is executed.
+
+```Bash
+# pip install -r services/oxr_mlx/requirements.txt
+
+MODEL_PATH="$PWD/models/OXR-1.0" \
+  python services/oxr_mlx/server.py --host 127.0.0.1 --port 8080
+```
+
+It answers one request at a time. MLX may use at most `OXR_MLX_MEMORY_GB` (default 5.5), and a request stops and fails when the machine has less than `OXR_MLX_MIN_FREE_GB` (default 1.5) available, instead of pushing it into swap.
+
+**Layout Analysis Model Service on the CPU (Port 8081)**
+
+```Bash
+# pip install torch==2.11.0 torchvision==0.26.0
+# pip install -r services/layout_analyze/requirements.txt
+
+MODEL_PATH="$PWD/models/OXR-1.0/layout_analysis/last.pth" \
+DFINE_DEVICE=cpu DFINE_CUDA_GRAPH=0 OMP_NUM_THREADS=2 \
+  python -m uvicorn dfine_la.api:app \
+  --app-dir services/layout_analyze \
+  --host 127.0.0.1 --port 8081 --workers 1
+```
+
+**Document Parsing API (Port 8000)**
+
+Use `services/oxr_mlx/config.mlx.yaml`: it sends one request at a time and gives queued requests time to wait.
+
+```Bash
+# pip install -c docker/requirements.allinone.txt .
+
+oxr serve --config services/oxr_mlx/config.mlx.yaml \
+  --host 127.0.0.1 --port 8000 --workers 1
+```
+
+Measured on an Apple M4 with 16GB, on 20 pages of scanned and born-digital documents (340 regions): 27 seconds a page (median), 0.5 seconds of it for layout analysis; 2.6GB for the model at rest and 3.6GB at the peak; about 65 tokens a second for short answers and 42 at 8,192 tokens. No region failed.
+
+Why not PyTorch on the Apple GPU (MPS): the Hugging Face code runs, at 8–16 tokens a second, but does not fit in 16GB. PyTorch's fused attention keeps Metal buffers for every input size it has seen (the vision encoder grew by 1–2GB per region size), and the KV cache, growing one token at a time, fragments its memory until a long answer fails at 2,000–3,000 tokens under a 5.5GB limit. MLX grows the cache in blocks of 256 tokens and keeps memory flat.
+
+`services/oxr_mlx/check.py` compares the port with the PyTorch model in the model folder: pixels, prompt ids, vision layers, visual embeddings, first logits and the greedy answer. The vision encoder in float32 matches the original at cosine 1.0000000. In bfloat16 both run with different rounding, so answers can differ where two tokens are almost equally likely: on a 40-row parts table, two cells differed from the PyTorch run.
 
 #### 1.3 Open the Visual Demo
 

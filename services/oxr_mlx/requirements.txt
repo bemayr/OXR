@@ -1,0 +1,6 @@
+mlx==0.32.4
+mlx-lm==0.32.2
+transformers==5.13.1
+pillow>=12
+numpy>=1.26
+psutil>=7
