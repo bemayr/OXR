@@ -269,6 +269,8 @@ Python: 3.12
 
 The same three services, with the OXR model running in [MLX](https://github.com/ml-explore/mlx) instead of vLLM and the Layout Analysis model on the CPU. The document parsing API is unchanged. Download the models as in 1.1, then start:
 
+Other MLX ports exist and were written independently of this one: [mlx-vlm](https://github.com/Blaizzy/mlx-vlm) has had an `oxr` model since 2026-10-21 ([#2560](https://github.com/Blaizzy/mlx-vlm/pull/2560), on `main`, not yet in a release; converted weights such as [bxespinozar/OXR-1.0-mlx-bf16](https://huggingface.co/bxespinozar/OXR-1.0-mlx-bf16)), and [SoMarkAI/OXR#14](https://github.com/SoMarkAI/OXR/pull/14) proposes an MLX backend for this repository. This one keeps the vLLM service's interface, so the parsing API needs no change, and comes with `check.py` for comparing it with the PyTorch model.
+
 **OXR Model Service on MLX (Port 8080)**
 
 `services/oxr_mlx` reads the same model folder: the language model runs on mlx-lm's Qwen3, the vision encoder, visual head and visual embedding table are ported in `services/oxr_mlx/model.py`. No code from the model folder is executed.
